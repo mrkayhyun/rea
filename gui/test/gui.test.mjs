@@ -1,5 +1,6 @@
 import { test, describe, before, after, mock } from "node:test";
 import assert from "node:assert";
+import { request as httpRequest } from "node:http";
 import {
   resolveReaCommand,
   loadCatalog,
@@ -322,48 +323,75 @@ describe("lib.mjs", () => {
     });
 
     test("uses env REA_GUI_REA_BIN", async () => {
+      const previous = process.env.REA_GUI_REA_BIN;
       process.env.REA_GUI_REA_BIN = "/env/rea.mjs";
-      const cmd = await resolveReaCommand();
-      assert.deepStrictEqual(cmd, [process.execPath, "/env/rea.mjs"]);
-      delete process.env.REA_GUI_REA_BIN;
+      try {
+        const cmd = await resolveReaCommand();
+        assert.deepStrictEqual(cmd, [process.execPath, "/env/rea.mjs"]);
+      } finally {
+        if (previous === undefined) {
+          delete process.env.REA_GUI_REA_BIN;
+        } else {
+          process.env.REA_GUI_REA_BIN = previous;
+        }
+      }
     });
   });
 });
+
+function httpGetStatus(urlString, hostHeader) {
+  return new Promise((resolvePromise, reject) => {
+    const target = new URL(urlString);
+    const req = httpRequest(
+      {
+        hostname: target.hostname,
+        port: target.port,
+        path: target.pathname + target.search,
+        method: "GET",
+        headers: { Host: hostHeader },
+      },
+      (res) => {
+        res.resume();
+        res.on("end", () => resolvePromise(res.statusCode));
+      },
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
 
 describe("server.mjs integration", () => {
   let server;
   let reaCommand;
 
   before(async () => {
-    reaCommand = await resolveReaCommand();
-    try {
-      const { default: pkg } = await import("../../package.json", {
-        with: { type: "json" },
-      });
-    } catch {}
+    reaCommand = await resolveReaCommand(process.env.REA_GUI_REA_BIN);
   });
 
-  test("startServer returns url and close function", async () => {
+  test("startServer returns origin, token, port and close", async () => {
     server = await startServer({ port: 0, reaCommand, open: false });
     assert.ok(server.url.startsWith("http://127.0.0.1:"));
+    assert.ok(!server.url.includes("?"));
+    assert.match(server.token, /^[0-9a-f]+$/);
+    assert.strictEqual(Number(server.port), Number(new URL(server.url).port));
     assert.ok(typeof server.close === "function");
     await server.close();
   });
 
-  test("GET / returns HTML", async () => {
+  test("GET / returns HTML with token replaced", async () => {
     server = await startServer({ port: 0, reaCommand, open: false });
-    const port = new URL(server.url).port;
-    const res = await fetch(`http://127.0.0.1:${port}/`);
+    const res = await fetch(new URL("/", server.url));
     assert.strictEqual(res.status, 200);
     const text = await res.text();
     assert.ok(text.includes("<html"));
+    assert.ok(text.includes(server.token));
+    assert.ok(!text.includes("__REA_GUI_TOKEN__"));
     await server.close();
   });
 
   test("GET /api/catalog has >100 commands", async () => {
     server = await startServer({ port: 0, reaCommand, open: false });
-    const port = new URL(server.url).port;
-    const res = await fetch(`http://127.0.0.1:${port}/api/catalog`);
+    const res = await fetch(new URL("/api/catalog", server.url));
     assert.strictEqual(res.status, 200);
     const data = await res.json();
     assert.ok(data.commands.length > 100);
@@ -372,18 +400,23 @@ describe("server.mjs integration", () => {
 
   test("Host header evil.example rejected", async () => {
     server = await startServer({ port: 0, reaCommand, open: false });
-    const port = new URL(server.url).port;
-    const res = await fetch(`http://127.0.0.1:${port}/api/catalog`, {
-      headers: { Host: "evil.example" },
-    });
-    assert.strictEqual(res.status, 403);
+    const badStatus = await httpGetStatus(
+      new URL("/api/catalog", server.url),
+      "evil.example",
+    );
+    assert.strictEqual(badStatus, 403);
+
+    const goodStatus = await httpGetStatus(
+      new URL("/api/catalog", server.url),
+      `127.0.0.1:${server.port}`,
+    );
+    assert.strictEqual(goodStatus, 200);
     await server.close();
   });
 
   test("POST /api/run without token -> 403", async () => {
     server = await startServer({ port: 0, reaCommand, open: false });
-    const port = new URL(server.url).port;
-    const res = await fetch(`http://127.0.0.1:${port}/api/run`, {
+    const res = await fetch(new URL("/api/run", server.url), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ command: "capabilities" }),
@@ -394,13 +427,13 @@ describe("server.mjs integration", () => {
 
   test("POST /api/run capabilities with token streams result exitCode 0", async () => {
     server = await startServer({ port: 0, reaCommand, open: false });
-    const urlObj = new URL(server.url);
-    const port = urlObj.port;
-    const token = urlObj.searchParams.get("token");
 
-    const res = await fetch(`http://127.0.0.1:${port}/api/run`, {
+    const res = await fetch(new URL("/api/run", server.url), {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-REA-GUI-Token": token },
+      headers: {
+        "Content-Type": "application/json",
+        "X-REA-GUI-Token": server.token,
+      },
       body: JSON.stringify({ command: "capabilities", args: {}, options: {} }),
     });
 
@@ -409,7 +442,7 @@ describe("server.mjs integration", () => {
 
     const reader = res.body.getReader();
     let resultEvent = null;
-    while (true) {
+    while (!resultEvent) {
       const { done, value } = await reader.read();
       if (done) break;
       const chunk = new TextDecoder().decode(value);
@@ -419,8 +452,8 @@ describe("server.mjs integration", () => {
           if (dataLine) resultEvent = JSON.parse(dataLine.slice(6));
         }
       }
-      if (resultEvent) break;
     }
+    await reader.cancel();
 
     assert.ok(resultEvent, "No result event received");
     assert.strictEqual(resultEvent.exitCode, 0);

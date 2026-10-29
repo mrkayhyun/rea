@@ -2,8 +2,8 @@ import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { resolve, join, extname, dirname } from "node:path";
-import { parse, fileURLToPath } from "node:url";
+import { resolve, extname, dirname, sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   resolveReaCommand,
   loadCatalog,
@@ -32,8 +32,7 @@ const RUN_TIMEOUT = 10 * 60 * 1000;
 async function getReaVersion(reaCommand) {
   if (reaVersionCache) return reaVersionCache;
   try {
-    const [cmd, ...args] = reaCommand;
-    const result = await runCommand([cmd, ...args, "--version"]);
+    const result = await runCommand([...reaCommand, "--version"]);
     reaVersionCache = result.stdout.trim();
     return reaVersionCache;
   } catch {
@@ -43,10 +42,8 @@ async function getReaVersion(reaCommand) {
 
 async function loadCatalogOnce(reaCommand) {
   if (catalogCache) return catalogCache;
-  const [cmd, ...args] = reaCommand;
   const result = await runCommand([
-    cmd,
-    ...args,
+    ...reaCommand,
     "--llms-full",
     "--format",
     "json",
@@ -63,7 +60,7 @@ async function loadCatalogOnce(reaCommand) {
 }
 
 function runCommand(argv, options = {}) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolvePromise, reject) => {
     const [cmd, ...args] = argv;
     const child = spawn(cmd, args, { shell: false, ...options });
     let stdout = "";
@@ -73,18 +70,20 @@ function runCommand(argv, options = {}) {
     child.stderr.on("data", (d) => (stderr += d));
 
     child.on("error", reject);
-    child.on("close", (code) => resolve({ exitCode: code, stdout, stderr }));
+    child.on("close", (code) =>
+      resolvePromise({ exitCode: code, stdout, stderr }),
+    );
   });
-}
-
-function parseSseLine(line) {
-  if (line.startsWith("data: ")) return line.slice(6);
-  return null;
 }
 
 function formatSse(event, data) {
   const payload = typeof data === "string" ? data : JSON.stringify(data);
   return `event: ${event}\ndata: ${payload}\n\n`;
+}
+
+function safeWrite(res, chunk) {
+  if (res.writableEnded || res.destroyed) return;
+  res.write(chunk);
 }
 
 async function handleCatalog(req, res, reaCommand) {
@@ -95,7 +94,7 @@ async function handleCatalog(req, res, reaCommand) {
     res.end(
       JSON.stringify({ reaVersion: version, commands: catalog.commands }),
     );
-  } catch (e) {
+  } catch {
     res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
     res.end(JSON.stringify({ error: "Failed to load catalog" }));
   }
@@ -103,10 +102,8 @@ async function handleCatalog(req, res, reaCommand) {
 
 async function handleDoctor(req, res, reaCommand) {
   try {
-    const [cmd, ...args] = reaCommand;
     const result = await runCommand([
-      cmd,
-      ...args,
+      ...reaCommand,
       "doctor",
       "--format",
       "json",
@@ -120,13 +117,13 @@ async function handleDoctor(req, res, reaCommand) {
     const summary = classifyDoctor(raw);
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
     res.end(JSON.stringify({ raw, summary }));
-  } catch (e) {
+  } catch {
     res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
     res.end(JSON.stringify({ error: "Doctor check failed" }));
   }
 }
 
-function validateHost(req) {
+export function validateHost(req) {
   const host = req.headers.host || "";
   return (
     host === `127.0.0.1:${actualPort}` || host === `localhost:${actualPort}`
@@ -206,7 +203,7 @@ async function handleRun(req, res, reaCommand) {
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
     });
-    res.write(formatSse("log", `Starting: ${argv.join(" ")}`));
+    safeWrite(res, formatSse("log", `Starting: ${argv.join(" ")}`));
 
     const [cmd, ...spawnArgs] = reaCommand;
     const child = spawn(cmd, [...spawnArgs, ...argv], { shell: false });
@@ -216,38 +213,54 @@ async function handleRun(req, res, reaCommand) {
       child.kill("SIGKILL");
     }, RUN_TIMEOUT);
 
-    const cleanup = () => {
+    const finish = () => {
       clearTimeout(timeout);
       runningProcesses.delete(child);
-      if (!child.killed) child.kill("SIGTERM");
     };
 
-    req.on("close", cleanup);
-    child.on("close", cleanup);
+    res.on("close", () => {
+      if (!res.writableEnded) {
+        finish();
+        if (!child.killed) child.kill("SIGKILL");
+      }
+    });
 
     let stdoutBuf = "";
     let stderrBuf = "";
+    let stderrRemainder = "";
 
     child.stdout.on("data", (d) => (stdoutBuf += d));
     child.stderr.on("data", (d) => {
       stderrBuf += d;
-      const lines = d.toString().split("\n");
+      stderrRemainder += d.toString();
+      const lines = stderrRemainder.split("\n");
+      stderrRemainder = lines.pop();
       for (const line of lines) {
         if (!line.trim()) continue;
         try {
           const parsed = JSON.parse(line);
           if (parsed.rea_progress) {
-            res.write(formatSse("progress", parsed.rea_progress));
+            safeWrite(res, formatSse("progress", parsed.rea_progress));
           } else {
-            res.write(formatSse("log", line));
+            safeWrite(res, formatSse("log", line));
           }
         } catch {
-          res.write(formatSse("log", line));
+          safeWrite(res, formatSse("log", line));
         }
       }
     });
 
+    child.on("error", (err) => {
+      finish();
+      safeWrite(res, formatSse("error", err.message));
+      if (!res.writableEnded) res.end();
+    });
+
     child.on("close", (code) => {
+      finish();
+      if (stderrRemainder.trim()) {
+        safeWrite(res, formatSse("log", stderrRemainder));
+      }
       let result;
       try {
         result = stdoutBuf
@@ -256,41 +269,37 @@ async function handleRun(req, res, reaCommand) {
       } catch {
         result = { exitCode: code, stdout: stdoutBuf };
       }
-      res.write(formatSse("result", { exitCode: code, ...result }));
-      res.end();
-    });
-
-    child.on("error", (err) => {
-      res.write(formatSse("error", err.message));
-      res.end();
+      safeWrite(res, formatSse("result", { exitCode: code, ...result }));
+      if (!res.writableEnded) res.end();
     });
   });
 }
 
-async function serveStatic(req, res, publicDir) {
-  const url = parse(req.url, true);
-  let pathname = url.pathname === "/" ? "/index.html" : url.pathname;
-  pathname = pathname.replace(/[?#].*$/, "");
-  const safePath = resolve(publicDir, "." + pathname);
-  if (!safePath.startsWith(publicDir)) {
+async function serveStatic(req, res, publicDir, pathname) {
+  let normalized = pathname === "/" ? "/index.html" : pathname;
+  const safePath = resolve(publicDir, "." + normalized);
+  if (safePath !== publicDir && !safePath.startsWith(publicDir + sep)) {
     res.writeHead(403);
     return res.end("Forbidden");
   }
 
   try {
-    const content = await readFile(safePath);
+    let content = await readFile(safePath);
+    if (normalized === "/index.html") {
+      content = Buffer.from(
+        content.toString("utf8").replaceAll("__REA_GUI_TOKEN__", guiToken),
+        "utf8",
+      );
+    }
     const ext = extname(safePath);
     const mime = MIME_TYPES[ext] || "application/octet-stream";
     res.writeHead(200, { "Content-Type": mime });
     res.end(content);
   } catch {
-    if (pathname === "/index.html") {
-      res.writeHead(404);
-      res.end("index.html not found");
-    } else {
-      res.writeHead(404);
-      res.end("Not found");
-    }
+    res.writeHead(404);
+    res.end(
+      normalized === "/index.html" ? "index.html not found" : "Not found",
+    );
   }
 }
 
@@ -310,7 +319,7 @@ export async function startServer({
       return res.end("Forbidden: Invalid Host header");
     }
 
-    const url = parse(req.url, true);
+    const url = new URL(req.url, "http://127.0.0.1");
 
     if (req.method === "GET" && url.pathname === "/api/catalog") {
       return handleCatalog(req, res, reaCommand);
@@ -322,18 +331,20 @@ export async function startServer({
       return handleRun(req, res, reaCommand);
     }
     if (req.method === "GET") {
-      return serveStatic(req, res, publicDir);
+      return serveStatic(req, res, publicDir, url.pathname);
     }
 
     res.writeHead(404);
     res.end("Not found");
   });
 
-  await new Promise((resolve) => server.listen(port, "127.0.0.1", resolve));
+  await new Promise((resolvePromise) =>
+    server.listen(port, "127.0.0.1", resolvePromise),
+  );
 
   actualPort = server.address().port;
-  const url = `http://127.0.0.1:${actualPort}/?token=${guiToken}`;
-  console.log(`REA GUI server running at ${url}`);
+  const origin = `http://127.0.0.1:${actualPort}`;
+  console.log(`REA GUI server running at ${origin}/?token=${guiToken}`);
 
   if (open) {
     const opener =
@@ -342,15 +353,30 @@ export async function startServer({
         : process.platform === "darwin"
           ? "open"
           : "xdg-open";
-    spawn(opener, [url], { detached: true, stdio: "ignore" }).unref();
+    try {
+      spawn(opener, [`${origin}/?token=${guiToken}`], {
+        detached: true,
+        stdio: "ignore",
+      }).unref();
+    } catch {}
   }
 
   return {
-    url,
+    url: origin,
+    token: guiToken,
+    port: actualPort,
     close: () =>
-      new Promise((resolve) => {
-        for (const child of runningProcesses) child.kill("SIGTERM");
-        server.close(resolve);
+      new Promise((resolvePromise) => {
+        for (const child of runningProcesses) {
+          try {
+            child.kill("SIGKILL");
+          } catch {}
+        }
+        runningProcesses.clear();
+        server.close(resolvePromise);
+        if (typeof server.closeAllConnections === "function") {
+          server.closeAllConnections();
+        }
       }),
   };
 }
@@ -369,7 +395,10 @@ const reaArg = args.indexOf("--rea");
 const reaPath = reaArg !== -1 ? args[reaArg + 1] : undefined;
 const noOpen = args.includes("--no-open");
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   (async () => {
     try {
       const reaCommand = reaPath ? await resolveReaCommand(reaPath) : undefined;
