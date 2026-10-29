@@ -243,6 +243,29 @@ export function buildArgv(command, values = {}, cmdInfo = null) {
   return argv;
 }
 
+export const ENGINE_FREE_COMMANDS = [
+  "doctor",
+  "capabilities",
+  "analyze-javascript-application",
+  "inspect-desktop-application",
+  "inspect-go-binary",
+  "inspect-rust-binary",
+  "inspect-pe-certificates",
+  "inspect-pe-imports",
+  "inspect-elf-notes",
+  "inspect-managed-artifact",
+  "inspect-managed-members",
+  "inspect-sqlite-database",
+  "inspect-apk-signature",
+  "identify-flutter-build",
+  "inspect-il2cpp-metadata",
+  "inspect-erlang-beam",
+  "inspect-kernel-module",
+  "inspect-apple-ips",
+  "inspect-model-artifact",
+  "inspect-gpu-code-objects",
+];
+
 export function classifyDoctor(doctorJson) {
   const data =
     typeof doctorJson === "string" ? JSON.parse(doctorJson) : doctorJson;
@@ -252,26 +275,7 @@ export function classifyDoctor(doctorJson) {
   const ready = [];
   const needsEngine = [];
   const other = [];
-  const engineFree = [
-    "analyze-javascript-application",
-    "inspect-sqlite-database",
-    "capabilities",
-    "doctor",
-    "analyze-dotnet-assembly",
-    "analyze-go-binary",
-    "analyze-rust-binary",
-    "analyze-wasm-module",
-    "inspect-pe",
-    "inspect-elf",
-    "inspect-macho",
-    "inspect-dol",
-    "decompile-function",
-    "address-to-file-offset",
-    "compare-evidence",
-    "evidence-ledger",
-    "reconstruct-control-flow",
-    "trace-execution",
-  ];
+  const engineFree = [...ENGINE_FREE_COMMANDS];
 
   for (const check of scopeChecks) {
     if (check.ok && check.classification === "healthy") {

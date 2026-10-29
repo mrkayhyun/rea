@@ -9,6 +9,7 @@ import {
   categorize,
   buildArgv,
   classifyDoctor,
+  ENGINE_FREE_COMMANDS,
 } from "../lib.mjs";
 import { startServer } from "../server.mjs";
 
@@ -454,6 +455,31 @@ describe("server.mjs integration", () => {
     assert.strictEqual(res.status, 200);
     const data = await res.json();
     assert.ok(data.commands.length > 100);
+    await server.close();
+  });
+
+  test("engineFree names exist in the catalog", async () => {
+    server = await startServer({ port: 0, reaCommand, open: false });
+    const catalogRes = await fetch(new URL("/api/catalog", server.url));
+    assert.strictEqual(catalogRes.status, 200);
+    const catalog = await catalogRes.json();
+    const names = new Set(catalog.commands.map((command) => command.name));
+
+    const doctorRes = await fetch(new URL("/api/doctor", server.url));
+    assert.strictEqual(doctorRes.status, 200);
+    const doctor = await doctorRes.json();
+    const engineFree = doctor.summary.engineFree;
+    assert.ok(Array.isArray(engineFree));
+    assert.ok(engineFree.length > 0);
+    for (const name of engineFree) {
+      assert.ok(names.has(name), `engineFree command missing: ${name}`);
+    }
+    for (const name of ENGINE_FREE_COMMANDS) {
+      assert.ok(
+        names.has(name),
+        `engineFree source list command missing from catalog: ${name}`,
+      );
+    }
     await server.close();
   });
 

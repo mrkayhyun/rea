@@ -502,6 +502,16 @@
     }, 1400);
   }
 
+  function selectCommand(command) {
+    renderCommand(command);
+    for (const button of document.querySelectorAll("#command-list .cmd")) {
+      button.classList.toggle(
+        "active",
+        Boolean(state.selected) && button.textContent === state.selected.name,
+      );
+    }
+  }
+
   function renderSidebar() {
     const list = $("command-list");
     list.textContent = "";
@@ -550,12 +560,7 @@
         button.title = command.description || "";
         if (state.selected && state.selected.name === command.name)
           button.classList.add("active");
-        button.addEventListener("click", () => {
-          for (const active of list.querySelectorAll(".cmd.active"))
-            active.classList.remove("active");
-          button.classList.add("active");
-          renderCommand(command);
-        });
+        button.addEventListener("click", () => selectCommand(command));
         items.appendChild(button);
       }
       details.appendChild(items);
@@ -636,8 +641,25 @@
         el("div", "doctor-fix", "Engine-free commands:"),
       );
       const chips = el("div", "chips");
-      for (const label of engineFree)
-        chips.appendChild(el("span", "chip", String(label)));
+      const commands = (state.catalog && state.catalog.commands) || [];
+      for (const label of engineFree) {
+        const name = String(label);
+        const command = commands.find((item) => item.name === name);
+        if (command) {
+          const button = el("button", "chip", name);
+          button.type = "button";
+          button.title = command.description || "";
+          button.style.cursor = "pointer";
+          button.style.color = "inherit";
+          button.addEventListener("click", () => {
+            setView("commands");
+            selectCommand(command);
+          });
+          chips.appendChild(button);
+        } else {
+          chips.appendChild(el("span", "chip", name));
+        }
+      }
       readySection.appendChild(chips);
     } else if (!ready.length) {
       readySection.appendChild(

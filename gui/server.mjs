@@ -115,6 +115,13 @@ async function handleDoctor(req, res, reaCommand) {
       raw = { error: "Failed to parse doctor output", stdout: result.stdout };
     }
     const summary = classifyDoctor(raw);
+    try {
+      const catalog = await loadCatalogOnce(reaCommand);
+      const available = new Set(catalog.commands.map((c) => c.name));
+      summary.engineFree = summary.engineFree.filter((name) =>
+        available.has(name),
+      );
+    } catch {}
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
     res.end(JSON.stringify({ raw, summary }));
   } catch {
