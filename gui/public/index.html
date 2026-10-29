@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="rea-gui-token" content="__REA_GUI_TOKEN__">
+  <title>REA GUI</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">REA <span>local GUI</span></div>
+    <div class="tabs" role="tablist" aria-label="Views">
+      <button id="tab-commands" class="tab active" role="tab" aria-selected="true" type="button">Commands</button>
+      <button id="tab-env" class="tab" role="tab" aria-selected="false" type="button">Environment</button>
+    </div>
+    <div id="rea-version" class="version"></div>
+  </header>
+
+  <main class="layout">
+    <aside id="sidebar" class="sidebar">
+      <div class="search-wrap">
+        <input id="search" type="search" placeholder="Search commands…" autocomplete="off" aria-label="Search commands">
+      </div>
+      <nav id="command-list" class="command-list" aria-label="Commands"></nav>
+    </aside>
+
+    <section class="pane">
+      <div id="banner" class="banner hidden" role="alert"></div>
+
+      <div id="view-commands">
+        <div id="empty" class="placeholder">Loading commands…</div>
+
+        <div id="command-view" class="hidden">
+          <h1 id="cmd-name"></h1>
+          <p id="cmd-desc" class="desc"></p>
+
+          <form id="run-form" class="form" autocomplete="off"></form>
+
+          <div class="preview-wrap">
+            <div class="preview-label">Command preview</div>
+            <code id="preview" class="preview">rea --format json</code>
+          </div>
+
+          <div class="actions">
+            <button id="run-btn" class="btn primary" type="button">Run</button>
+            <button id="stop-btn" class="btn" type="button" disabled>Stop</button>
+            <span id="run-status" class="status"></span>
+          </div>
+
+          <div class="output">
+            <div class="output-head"><span>Progress</span></div>
+            <ul id="progress" class="progress"></ul>
+
+            <div id="result-wrap" class="result-wrap hidden">
+              <div class="output-head">
+                <span>Result <span id="exit-code" class="exit"></span></span>
+                <button id="copy-btn" class="btn small" type="button">Copy</button>
+              </div>
+              <pre id="result" class="result"></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-env" class="hidden">
+        <div class="env-head">
+          <h1>Environment</h1>
+          <button id="refresh-doctor" class="btn" type="button">Refresh</button>
+        </div>
+        <div id="doctor" class="doctor">
+          <div class="placeholder">Checking environment…</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
