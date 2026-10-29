@@ -11,7 +11,7 @@ An unofficial, fork-only browser interface for exploring REA commands and runnin
 - Shows a live command preview, Run/Stop, streaming progress, and JSON result with copy
 - Environment tab runs `rea doctor --format json` and renders the classified summary
 - **No shell**, **no custom commands** — only catalog-validated commands run
-- Binds `127.0.0.1` only; validates `Host` header; per-run random token
+- Binds `127.0.0.1` only; validates `Host` header (`127.0.0.1:<port>` or `localhost:<port>`); per-session random token
 
 ## Requirements
 
@@ -46,10 +46,10 @@ node gui/server.mjs --rea "$(npm root -g)/rea-agents/scripts/rea.mjs"
 
 - `REA_GUI_REA_BIN` — alternative to `--rea`; same path format
 
-The server prints a URL with a one-time token:
+The server prints the local URL:
 
 ```
-REA GUI server running at http://127.0.0.1:7700/?token=abc123...
+REA GUI server running at http://127.0.0.1:7700/
 ```
 
 ## Three screens
@@ -68,7 +68,7 @@ REA GUI server running at http://127.0.0.1:7700/?token=abc123...
 - **Command preview**: live `rea ... --format json` command line updates as you type
 - **Run / Stop**: starts/stops the command via SSE stream
 - **Progress**: streaming log/progress lines from stderr (REA progress events parsed)
-- **Result**: JSON output with syntax highlighting, copy button, exit code badge
+- **Result**: JSON output with copy button, exit code badge
 
 ### 3. Environment tab
 
@@ -82,11 +82,11 @@ REA GUI server running at http://127.0.0.1:7700/?token=abc123...
 
 - Binds **only `127.0.0.1`** (never `0.0.0.0`)
 - Validates `Host` header: must be `127.0.0.1:<port>` or `localhost:<port>`
-- Per-session random token (16-byte hex) passed via `?token=` or `X-REA-GUI-Token` header
-- Token embedded in `index.html` at startup; changes on every server restart
+- Random token (16-byte hex) generated on every server start, embedded in the served page, and sent only in the `X-REA-GUI-Token` header on POST
+- Token changes on every server restart
 - `spawn` with `shell: false` — no shell injection
 - Command allow-list: only commands from `rea --llms-full --format json` can run
-- Args/options validated against each command's schema
+- Only arg/option **names** checked against catalog keys; values are not schema-validated
 - Max **2 concurrent runs**; each killed after **10 minutes** (SIGKILL)
 
 ## Limitations
@@ -94,20 +94,20 @@ REA GUI server running at http://127.0.0.1:7700/?token=abc123...
 - **No engine bundled** — native analysis (Ghidra, Hopper, IDA, Kuna, JADX) requires separate installation and config
 - **Windows untested** — process supervision, launcher discovery, and Hopper demo mode may not work
 - **Long outputs** shown as JSON text (no paging or structured viewers beyond copy)
-- Single-user, local-only; no authentication beyond the per-run token
-- No persistence: catalog and doctor re-fetched on each page load/refresh
+- Single-user, local-only; no authentication beyond the per-session token
+- No persistence: catalog is cached server-side until restart; only doctor is re-fetched on refresh
 
 ## Troubleshooting
 
-| Symptom                                            | Fix                                                                   |
-| -------------------------------------------------- | --------------------------------------------------------------------- |
-| `rea not found` / "Could not load the rea catalog" | Start with `--rea /absolute/path/to/rea.mjs` or set `REA_GUI_REA_BIN` |
-| Port 7700 busy                                     | Use `--port 7701` (or any free port)                                  |
-| Browser doesn't open                               | Use `--no-open` and paste the printed URL manually                    |
-| "Invalid Host header"                              | Access via `http://127.0.0.1:<port>/` not `localhost` or LAN IP       |
-| "Invalid token"                                    | Restart the server; token changes every run                           |
-| Command fails with "Unknown arg/option"            | The catalog may be stale; restart the server after `rea update`       |
-| Native command hangs / times out                   | Engine not configured; check Environment tab for remediation          |
+| Symptom                                            | Fix                                                                            |
+| -------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `rea not found` / "Could not load the rea catalog" | Start with `--rea /absolute/path/to/rea.mjs` or set `REA_GUI_REA_BIN`          |
+| Port 7700 busy                                     | Use `--port 7701` (or any free port)                                           |
+| Browser doesn't open                               | Use `--no-open` and paste the printed URL manually                             |
+| "Invalid Host header"                              | Access via `http://127.0.0.1:<port>/` or `http://localhost:<port>/` not LAN IP |
+| "Invalid token"                                    | Restart the server; token changes every restart                                |
+| Command fails with "Unknown arg/option"            | The catalog may be stale; restart the server after `rea update`                |
+| Native command hangs / times out                   | Engine not configured; check Environment tab for remediation                   |
 
 ## Run the GUI tests
 

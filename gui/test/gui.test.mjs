@@ -1,6 +1,7 @@
 import { test, describe, before, after, mock } from "node:test";
 import assert from "node:assert";
 import { request as httpRequest } from "node:http";
+import { mkdtemp, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -436,6 +437,30 @@ describe("server.mjs integration", () => {
     assert.strictEqual(Number(server.port), Number(new URL(server.url).port));
     assert.ok(typeof server.close === "function");
     await server.close();
+  });
+
+  test("startServer with open:true and a missing opener does not crash", async () => {
+    const emptyPathDir = await mkdtemp(
+      join(dirname(fileURLToPath(import.meta.url)), ".empty-path-"),
+    );
+    const previousPath = process.env.PATH;
+    process.env.PATH = emptyPathDir;
+    let localServer;
+    try {
+      localServer = await startServer({
+        port: 0,
+        reaCommand,
+        open: true,
+      });
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+      const res = await fetch(new URL("/", localServer.url));
+      assert.strictEqual(res.status, 200);
+      await res.text();
+    } finally {
+      process.env.PATH = previousPath;
+      if (localServer) await localServer.close();
+      await rm(emptyPathDir, { recursive: true, force: true });
+    }
   });
 
   test("GET / returns HTML with token replaced", async () => {

@@ -19,7 +19,7 @@ npm install --global rea-agents
 rea --help
 ```
 
-> **Note:** `npm install --global rea-agents` may print a warning that frida's install script was not run under `npm allowScripts`. This comes from an optional transitive dependency and does not affect REA.
+> **Note:** With npm 11 you may see a warning that the frida package install script was not run (allowScripts); static analysis does not need Frida.
 
 ## 2) Run `rea doctor` and read the output
 
@@ -96,19 +96,28 @@ The GUI Environment tab shows the same data grouped as **Works now (no engine)**
 
 ## 3) What works with no engine
 
-Static analysis that reads files without running them needs no native engine. From the README table:
+Static analysis that reads files without running them needs no native engine. Commands verified to exist (from `engine-free-verified.json`) with targets from the README analysis table:
 
-| Target                                           | Command example                                                          |
-| ------------------------------------------------ | ------------------------------------------------------------------------ |
-| JavaScript / Electron app (directory or `.asar`) | `rea analyze-javascript-application /absolute/path/to/app --format json` |
-| .NET assembly (metadata, CIL)                    | `rea analyze-dotnet-assembly /absolute/path/Assembly.dll --format json`  |
-| Go binary (embedded build metadata)              | `rea analyze-go-binary /absolute/path/to/program --format json`          |
-| Rust binary (cargo-auditable deps)               | `rea analyze-rust-binary /absolute/path/to/program --format json`        |
-| WASM module                                      | `rea analyze-wasm-module /absolute/path/to/module.wasm --format json`    |
-| SQLite database                                  | `rea inspect-sqlite-database /absolute/path/to.db --format json`         |
-| PE/ELF/Mach-O/DOL headers                        | `rea inspect-pe /absolute/path/to/bin --format json`                     |
-| Decompile function (engine-free fallback)        | `rea decompile-function /absolute/path/to/bin 0x1000 --format json`      |
-| Compare evidence / ledger / reconstruct / trace  | `rea compare-evidence left.json right.json --format json`                |
+| Target                                           | Command example                                                                               |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| JavaScript / Electron app (directory or `.asar`) | `rea analyze-javascript-application /absolute/path/to/app --format json`                      |
+| .NET assembly (metadata, CIL)                    | `rea inspect-managed-artifact /absolute/path/Assembly.dll --format json`                      |
+| Go binary (embedded build metadata)              | `rea inspect-go-binary /absolute/path/to/program --format json`                               |
+| Rust binary (cargo-auditable deps)               | `rea inspect-rust-binary /absolute/path/to/program --format json`                             |
+| WASM module                                      | `rea inspect-wasm-artifact /absolute/path/to/module.wasm --format json` (needs WABT 1.0.42)   |
+| SQLite database                                  | `rea inspect-sqlite-database /absolute/path/to.db --format json` (Node.js 24.x ≥24.15 or 26+) |
+| PE certificates                                  | `rea inspect-pe-certificates /absolute/path/to/bin --format json`                             |
+| PE imports                                       | `rea inspect-pe-imports /absolute/path/to/bin --format json`                                  |
+| ELF notes                                        | `rea inspect-elf-notes /absolute/path/to/bin --format json`                                   |
+| Desktop application                              | `rea inspect-desktop-application /absolute/path/to/app --format json`                         |
+| IL2CPP metadata                                  | `rea inspect-il2cpp-metadata /absolute/path/to/global-metadata.dat --format json`             |
+| APK signature                                    | `rea inspect-apk-signature /absolute/path/to/app.apk --format json`                           |
+| Flutter app                                      | `rea identify-flutter-build /absolute/path/to/app.apk --format json`                          |
+| GPU code object                                  | `rea inspect-gpu-code-objects /absolute/path/to/bin --format json`                            |
+| Model artifact (GGUF/safetensors)                | `rea inspect-model-artifact /absolute/path/to/model --format json`                            |
+| Apple IPS crash                                  | `rea inspect-apple-ips /absolute/path/to.ips --format json`                                   |
+| Linux kernel module                              | `rea inspect-kernel-module /absolute/path/to.ko --format json`                                |
+| Erlang BEAM                                      | `rea inspect-erlang-beam /absolute/path/to/module.beam --format json`                         |
 
 **Copy-paste example:**
 

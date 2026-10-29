@@ -351,20 +351,24 @@ export async function startServer({
 
   actualPort = server.address().port;
   const origin = `http://127.0.0.1:${actualPort}`;
-  console.log(`REA GUI server running at ${origin}/?token=${guiToken}`);
+  console.log(`REA GUI server running at ${origin}/`);
 
   if (open) {
     const opener =
       process.platform === "win32"
-        ? "start"
+        ? "explorer.exe"
         : process.platform === "darwin"
           ? "open"
           : "xdg-open";
     try {
-      spawn(opener, [`${origin}/?token=${guiToken}`], {
+      const child = spawn(opener, [origin], {
         detached: true,
         stdio: "ignore",
-      }).unref();
+      });
+      child.on("error", () => {
+        console.log(`Open ${origin} in your browser`);
+      });
+      child.unref();
     } catch {}
   }
 
