@@ -1,6 +1,29 @@
 import { access, constants } from "node:fs/promises";
-import { dirname, resolve, join } from "node:path";
+import { delimiter, dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+async function findWindowsRea() {
+  const pathEntries = (process.env.PATH || process.env.Path || "").split(
+    delimiter,
+  );
+  for (const entry of pathEntries) {
+    if (!entry) continue;
+    const cmdPath = join(entry, "rea.cmd");
+    const scriptPath = join(
+      entry,
+      "node_modules",
+      "rea-agents",
+      "scripts",
+      "rea.mjs",
+    );
+    try {
+      await access(cmdPath, constants.F_OK);
+      await access(scriptPath, constants.F_OK);
+      return [process.execPath, scriptPath];
+    } catch {}
+  }
+  return null;
+}
 
 export function camelToKebab(str) {
   return str.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
@@ -19,7 +42,7 @@ export async function resolveReaCommand(providedPath) {
   }
 
   const __filename = fileURLToPath(import.meta.url);
-  const repoRoot = resolve(dirname(__filename), "../../..");
+  const repoRoot = resolve(dirname(__filename), "..");
   const scriptsRea = join(repoRoot, "scripts/rea.mjs");
   const distDir = join(repoRoot, "dist");
 
@@ -30,7 +53,11 @@ export async function resolveReaCommand(providedPath) {
   } catch {}
 
   if (process.platform === "win32") {
-    return ["rea.cmd"];
+    const windowsRea = await findWindowsRea();
+    if (windowsRea) return windowsRea;
+    throw new Error(
+      "Could not find the rea CLI on Windows. Pass --rea <path to rea.mjs> to point the GUI at your installation.",
+    );
   }
   return ["rea"];
 }
@@ -66,7 +93,12 @@ export function loadCatalog(rawJson) {
 
 export function categorize(name) {
   const lower = name.toLowerCase();
-  if (lower.startsWith("doctor") || lower.startsWith("capabilities")) {
+  if (
+    lower === "doctor" ||
+    lower === "capabilities" ||
+    lower === "analyze" ||
+    lower === "inspect"
+  ) {
     return "Start here";
   }
   if (
@@ -81,7 +113,9 @@ export function categorize(name) {
     lower.includes("web") ||
     lower.includes("browser") ||
     lower.includes("webmcp") ||
-    lower.includes("har")
+    lower.includes("har") ||
+    lower.includes("packet") ||
+    lower.includes("pcap")
   ) {
     return "Web & browser";
   }
@@ -116,6 +150,7 @@ export function categorize(name) {
   }
   if (
     lower.includes("native") ||
+    lower.includes("binary") ||
     lower.includes("decompile") ||
     lower.includes("function") ||
     lower.includes("ghidra") ||
@@ -127,16 +162,29 @@ export function categorize(name) {
     lower.includes("gdb") ||
     lower.includes("elf") ||
     lower.startsWith("pe-") ||
+    lower.startsWith("inspect-pe") ||
     lower.includes("macho") ||
     lower.includes("dol") ||
     lower.includes("address")
   ) {
     return "Native binaries";
   }
-  if (lower.startsWith("analyze") || lower.startsWith("inspect")) {
-    return "Start here";
-  }
   return "Other";
+}
+
+function matchesDefault(value, schema) {
+  if (!schema || schema.default === undefined) return false;
+  const defaultValue = schema.default;
+  if (Array.isArray(defaultValue)) {
+    if (!Array.isArray(value) || value.length !== defaultValue.length) {
+      return false;
+    }
+    return value.every(
+      (item, index) => String(item) === String(defaultValue[index]),
+    );
+  }
+  if (typeof defaultValue === "boolean") return value === defaultValue;
+  return String(value) === String(defaultValue);
 }
 
 export function buildArgv(command, values = {}, cmdInfo = null) {
@@ -170,6 +218,11 @@ export function buildArgv(command, values = {}, cmdInfo = null) {
   for (const key of Object.keys(options)) {
     const val = options[key];
     if (val === undefined || val === null) continue;
+
+    if (cmdInfo) {
+      const optionInfo = cmdInfo.options.find((o) => o.name === key);
+      if (optionInfo && matchesDefault(val, optionInfo.schema)) continue;
+    }
 
     const flag = camelToKebab(key);
 

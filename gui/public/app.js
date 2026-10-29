@@ -194,6 +194,27 @@
       isEmpty() {
         return type === "boolean" ? false : input.value.trim() === "";
       },
+      isChanged() {
+        if (type === "boolean")
+          return input.checked !== (field.default === true);
+        const value = input.value.trim();
+        if (value === "") return false;
+        if (type === "array") {
+          const defaults = Array.isArray(field.default)
+            ? field.default.map(String)
+            : [];
+          const items = value
+            .split(/\r?\n/)
+            .map((item) => item.trim())
+            .filter(Boolean);
+          return JSON.stringify(items) !== JSON.stringify(defaults);
+        }
+        const defaultValue =
+          field.default === undefined || field.default === null
+            ? ""
+            : String(field.default);
+        return value !== defaultValue;
+      },
     };
     input.addEventListener("input", updatePreview);
     input.addEventListener("change", updatePreview);
@@ -261,6 +282,7 @@
         continue;
       }
       const flag = "--" + flagName(field.key);
+      if (!field.isChanged()) continue;
       if (typeof value === "boolean") {
         if (value) parts.push(flag);
       } else if (Array.isArray(value)) {
@@ -275,9 +297,11 @@
     const options = {};
     for (const field of state.fields) {
       const target = field.kind === "arg" ? args : options;
-      if (field.kind === "option" && propKind(field.prop) === "boolean")
-        target[field.key] = Boolean(field.getValue());
-      else if (!field.isEmpty()) target[field.key] = field.getValue();
+      if (field.kind === "option" && propKind(field.prop) === "boolean") {
+        if (field.isChanged()) target[field.key] = Boolean(field.getValue());
+      } else if (field.kind === "option") {
+        if (field.isChanged()) target[field.key] = field.getValue();
+      } else if (!field.isEmpty()) target[field.key] = field.getValue();
     }
     return { command: state.selected.name, args, options };
   }
@@ -544,6 +568,8 @@
       state.catalog = await requestJSON("/api/catalog");
       const version = state.catalog && state.catalog.reaVersion;
       $("rea-version").textContent = version ? "rea " + version : "";
+      $("empty").textContent =
+        "Pick a command on the left, or open the Environment tab to see what works without engines.";
       renderSidebar();
     } catch (err) {
       $("empty").textContent = "Could not load commands.";

@@ -196,7 +196,7 @@ async function handleRun(req, res, reaCommand) {
       }
     }
 
-    const argv = buildArgv(command, { args, options });
+    const argv = buildArgv(command, { args, options }, cmdInfo);
 
     res.writeHead(200, {
       "Content-Type": "text/event-stream",

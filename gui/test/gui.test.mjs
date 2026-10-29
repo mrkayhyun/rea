@@ -1,6 +1,8 @@
 import { test, describe, before, after, mock } from "node:test";
 import assert from "node:assert";
 import { request as httpRequest } from "node:http";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   resolveReaCommand,
   loadCatalog,
@@ -145,6 +147,32 @@ describe("lib.mjs", () => {
       assert.deepStrictEqual(argvFalse, ["doctor", "--format", "json"]);
     });
 
+    test("omits options equal to their schema default", () => {
+      const cmdInfo = {
+        name: "inspect",
+        args: [],
+        options: [
+          { name: "detail", schema: { type: "string", default: "complete" } },
+          {
+            name: "artifactFormat",
+            schema: { type: "string", default: "auto" },
+          },
+        ],
+      };
+      assert.deepStrictEqual(
+        buildArgv(
+          "inspect",
+          { options: { detail: "complete", artifactFormat: "auto" } },
+          cmdInfo,
+        ),
+        ["inspect", "--format", "json"],
+      );
+      assert.deepStrictEqual(
+        buildArgv("inspect", { options: { detail: "brief" } }, cmdInfo),
+        ["inspect", "--detail", "brief", "--format", "json"],
+      );
+    });
+
     test("array repeats flag", () => {
       const argv = buildArgv(
         "doctor",
@@ -206,11 +234,13 @@ describe("lib.mjs", () => {
   });
 
   describe("categorize", () => {
-    test("Start here", () => {
+    test("Start here is only the exact entry-point commands", () => {
       assert.strictEqual(categorize("doctor"), "Start here");
       assert.strictEqual(categorize("capabilities"), "Start here");
-      assert.strictEqual(categorize("analyze-something"), "Start here");
-      assert.strictEqual(categorize("inspect-binary"), "Start here");
+      assert.strictEqual(categorize("analyze"), "Start here");
+      assert.strictEqual(categorize("inspect"), "Start here");
+      assert.notStrictEqual(categorize("analyze-something"), "Start here");
+      assert.notStrictEqual(categorize("inspect-binary"), "Start here");
     });
 
     test("JavaScript & Electron", () => {
@@ -237,6 +267,8 @@ describe("lib.mjs", () => {
       );
       assert.strictEqual(categorize("webmcp-something"), "Web & browser");
       assert.strictEqual(categorize("har-analyzer"), "Web & browser");
+      assert.strictEqual(categorize("inspect-packet-capture"), "Web & browser");
+      assert.strictEqual(categorize("inspect-pcap"), "Web & browser");
     });
 
     test("Native binaries", () => {
@@ -249,6 +281,10 @@ describe("lib.mjs", () => {
         categorize("address-to-file-offset"),
         "Native binaries",
       );
+      assert.strictEqual(categorize("inspect-go-binary"), "Native binaries");
+      assert.strictEqual(categorize("inspect-rust-binary"), "Native binaries");
+      assert.strictEqual(categorize("inspect-pe-header"), "Native binaries");
+      assert.strictEqual(categorize("inspect-macho"), "Native binaries");
     });
 
     test("Android", () => {
@@ -276,6 +312,7 @@ describe("lib.mjs", () => {
 
     test("Other", () => {
       assert.strictEqual(categorize("random-command"), "Other");
+      assert.strictEqual(categorize("inspect-sqlite-database"), "Other");
     });
   });
 
@@ -328,6 +365,28 @@ describe("lib.mjs", () => {
       try {
         const cmd = await resolveReaCommand();
         assert.deepStrictEqual(cmd, [process.execPath, "/env/rea.mjs"]);
+      } finally {
+        if (previous === undefined) {
+          delete process.env.REA_GUI_REA_BIN;
+        } else {
+          process.env.REA_GUI_REA_BIN = previous;
+        }
+      }
+    });
+
+    test("finds the repo build when no path or env is provided", async () => {
+      const previous = process.env.REA_GUI_REA_BIN;
+      delete process.env.REA_GUI_REA_BIN;
+      try {
+        const cmd = await resolveReaCommand();
+        const repoRoot = resolve(
+          dirname(fileURLToPath(import.meta.url)),
+          "../..",
+        );
+        assert.deepStrictEqual(cmd, [
+          process.execPath,
+          join(repoRoot, "scripts/rea.mjs"),
+        ]);
       } finally {
         if (previous === undefined) {
           delete process.env.REA_GUI_REA_BIN;
