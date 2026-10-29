@@ -86,6 +86,11 @@ function safeWrite(res, chunk) {
   res.write(chunk);
 }
 
+function sendError(res, status, code, error, extra) {
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
+  res.end(JSON.stringify({ error, code, ...extra }));
+}
+
 async function handleCatalog(req, res, reaCommand) {
   try {
     const catalog = await loadCatalogOnce(reaCommand);
@@ -95,8 +100,7 @@ async function handleCatalog(req, res, reaCommand) {
       JSON.stringify({ reaVersion: version, commands: catalog.commands }),
     );
   } catch {
-    res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
-    res.end(JSON.stringify({ error: "Failed to load catalog" }));
+    sendError(res, 500, "catalog_failed", "Failed to load catalog");
   }
 }
 
@@ -125,8 +129,7 @@ async function handleDoctor(req, res, reaCommand) {
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
     res.end(JSON.stringify({ raw, summary }));
   } catch {
-    res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
-    res.end(JSON.stringify({ error: "Doctor check failed" }));
+    sendError(res, 500, "doctor_failed", "Doctor check failed");
   }
 }
 
@@ -143,14 +146,12 @@ function validateToken(req) {
 
 async function handleRun(req, res, reaCommand) {
   if (!validateToken(req)) {
-    res.writeHead(403, { "Content-Type": "application/json; charset=utf-8" });
-    res.end(JSON.stringify({ error: "Invalid token" }));
+    sendError(res, 403, "invalid_token", "Invalid token");
     return;
   }
 
   if (runningProcesses.size >= MAX_CONCURRENT) {
-    res.writeHead(429, { "Content-Type": "application/json; charset=utf-8" });
-    res.end(JSON.stringify({ error: "Max concurrent runs reached" }));
+    sendError(res, 429, "too_many_runs", "Max concurrent runs reached");
     return;
   }
 
@@ -161,23 +162,20 @@ async function handleRun(req, res, reaCommand) {
     try {
       payload = JSON.parse(body);
     } catch {
-      res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify({ error: "Invalid JSON" }));
+      sendError(res, 400, "invalid_json", "Invalid JSON");
       return;
     }
 
     const { command, args, options } = payload;
     if (!command || typeof command !== "string") {
-      res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify({ error: "Missing command" }));
+      sendError(res, 400, "missing_command", "Missing command");
       return;
     }
 
     const catalog = await loadCatalogOnce(reaCommand);
     const cmdInfo = catalog.commands.find((c) => c.name === command);
     if (!cmdInfo) {
-      res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify({ error: "Unknown command" }));
+      sendError(res, 400, "unknown_command", "Unknown command");
       return;
     }
 
@@ -186,19 +184,17 @@ async function handleRun(req, res, reaCommand) {
 
     for (const key of Object.keys(args || {})) {
       if (!knownArgs.has(key)) {
-        res.writeHead(400, {
-          "Content-Type": "application/json; charset=utf-8",
+        sendError(res, 400, "unknown_arg", `Unknown arg: ${key}`, {
+          name: key,
         });
-        res.end(JSON.stringify({ error: `Unknown arg: ${key}` }));
         return;
       }
     }
     for (const key of Object.keys(options || {})) {
       if (!knownOptions.has(key)) {
-        res.writeHead(400, {
-          "Content-Type": "application/json; charset=utf-8",
+        sendError(res, 400, "unknown_option", `Unknown option: ${key}`, {
+          name: key,
         });
-        res.end(JSON.stringify({ error: `Unknown option: ${key}` }));
         return;
       }
     }
@@ -210,7 +206,7 @@ async function handleRun(req, res, reaCommand) {
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
     });
-    safeWrite(res, formatSse("log", `Starting: ${argv.join(" ")}`));
+    safeWrite(res, formatSse("starting", { argv }));
 
     const [cmd, ...spawnArgs] = reaCommand;
     const child = spawn(cmd, [...spawnArgs, ...argv], { shell: false });

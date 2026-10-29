@@ -234,6 +234,11 @@ textarea {
 .icon-btn:hover {
   background: var(--panel-2);
 }
+.icon-btn svg {
+  width: 17px;
+  height: 17px;
+  display: block;
+}
 
 .layout {
   flex: 1 1 auto;
@@ -319,10 +324,17 @@ textarea {
   background: var(--panel-2);
 }
 .group-icon {
-  font-size: 12px;
   width: 16px;
-  text-align: center;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
+}
+.group-icon svg {
+  width: 14px;
+  height: 14px;
+  display: block;
 }
 .group-name {
   overflow: hidden;
@@ -726,6 +738,14 @@ html[data-theme="dark"] .btn.primary {
 html[data-theme="dark"] .btn.primary:hover:not(:disabled) {
   filter: brightness(1.12);
 }
+.btn.primary.running:disabled {
+  opacity: 0.78;
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-text);
+  box-shadow: none;
+  filter: none;
+}
 .btn.danger {
   color: var(--bad);
   border-color: var(--bad-border);
@@ -738,8 +758,24 @@ html[data-theme="dark"] .btn.primary:hover:not(:disabled) {
   font-size: 12px;
 }
 .run-icon {
-  font-size: 11px;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.run-icon svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+  fill: currentColor;
+}
+.spinner {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
 }
 .hint {
   font-family: var(--mono);
@@ -804,6 +840,12 @@ html[data-theme="dark"] .btn.primary:hover:not(:disabled) {
   overflow-y: auto;
   font-family: var(--mono);
   font-size: 12px;
+  transition: max-height 0.18s ease;
+}
+.progress.collapsed {
+  max-height: 0;
+  margin-top: 0;
+  overflow: hidden;
 }
 .progress:empty {
   display: none;

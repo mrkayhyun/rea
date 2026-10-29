@@ -112,8 +112,9 @@
 
             <div class="actions">
               <button id="run-btn" class="btn primary" type="button">
-                <span class="run-icon" aria-hidden="true">▶</span>
-                <span data-i18n="actions.run"></span>
+                <span class="run-icon" aria-hidden="true"></span>
+                <span class="spinner hidden" aria-hidden="true"></span>
+                <span class="run-label" data-i18n="actions.run"></span>
               </button>
               <button
                 id="stop-btn"
@@ -137,6 +138,11 @@
                   <div id="progress-fill" class="progress-fill"></div>
                 </div>
                 <span id="progress-label" class="progress-label"></span>
+                <button
+                  id="progress-toggle"
+                  class="btn small hidden"
+                  type="button"
+                ></button>
               </div>
               <ul id="progress" class="progress"></ul>
 

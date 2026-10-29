@@ -61,6 +61,18 @@ const LLMS_SAMPLE = JSON.stringify({
   ],
 });
 
+const ERROR_CODES = [
+  "catalog_failed",
+  "doctor_failed",
+  "invalid_token",
+  "too_many_runs",
+  "invalid_json",
+  "missing_command",
+  "unknown_command",
+  "unknown_arg",
+  "unknown_option",
+];
+
 const DOCTOR_SAMPLE = {
   healthy: false,
   environment_healthy: false,
@@ -103,6 +115,24 @@ describe("i18n", () => {
         assert.strictEqual(typeof value, "string", `${lang}.${key}`);
         assert.ok(value.trim().length > 0, `${lang}.${key} is empty`);
       }
+  });
+
+  test("i18n covers every server error code and log.starting", () => {
+    for (const lang of SUPPORTED) {
+      for (const code of ERROR_CODES) {
+        const key = "error." + code;
+        assert.ok(
+          Object.prototype.hasOwnProperty.call(MESSAGES[lang], key),
+          `${lang} missing ${key}`,
+        );
+        assert.ok(MESSAGES[lang][key].trim().length > 0, `${lang}.${key}`);
+      }
+      assert.ok(
+        Object.prototype.hasOwnProperty.call(MESSAGES[lang], "log.starting"),
+        `${lang} missing log.starting`,
+      );
+      assert.ok(MESSAGES[lang]["log.starting"].includes("{cmd}"));
+    }
   });
 
   test("detectLang prefers stored, then Korean navigator languages", () => {
@@ -553,6 +583,29 @@ describe("server.mjs integration", () => {
     await server.close();
   });
 
+  test("catalog and doctor failures include stable codes", async () => {
+    const badServer = await startServer({
+      port: 0,
+      reaCommand: ["/nonexistent/rea-binary"],
+      open: false,
+    });
+    try {
+      const catalogRes = await fetch(new URL("/api/catalog", badServer.url));
+      assert.strictEqual(catalogRes.status, 500);
+      const catalogData = await catalogRes.json();
+      assert.strictEqual(catalogData.code, "catalog_failed");
+      assert.strictEqual(catalogData.error, "Failed to load catalog");
+
+      const doctorRes = await fetch(new URL("/api/doctor", badServer.url));
+      assert.strictEqual(doctorRes.status, 500);
+      const doctorData = await doctorRes.json();
+      assert.strictEqual(doctorData.code, "doctor_failed");
+      assert.strictEqual(doctorData.error, "Doctor check failed");
+    } finally {
+      await badServer.close();
+    }
+  });
+
   test("GET /api/catalog has >100 commands", async () => {
     server = await startServer({ port: 0, reaCommand, open: false });
     const res = await fetch(new URL("/api/catalog", server.url));
@@ -611,6 +664,59 @@ describe("server.mjs integration", () => {
       body: JSON.stringify({ command: "capabilities" }),
     });
     assert.strictEqual(res.status, 403);
+    const data = await res.json();
+    assert.strictEqual(data.code, "invalid_token");
+    assert.strictEqual(data.error, "Invalid token");
+    await server.close();
+  });
+
+  test("POST /api/run validation errors include stable codes", async () => {
+    server = await startServer({ port: 0, reaCommand, open: false });
+    const post = (body) =>
+      fetch(new URL("/api/run", server.url), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-REA-GUI-Token": server.token,
+        },
+        body: typeof body === "string" ? body : JSON.stringify(body),
+      });
+
+    const invalidJson = await post("{");
+    assert.strictEqual(invalidJson.status, 400);
+    const invalidJsonData = await invalidJson.json();
+    assert.strictEqual(invalidJsonData.code, "invalid_json");
+    assert.strictEqual(invalidJsonData.error, "Invalid JSON");
+
+    const missing = await post({});
+    assert.strictEqual(missing.status, 400);
+    const missingData = await missing.json();
+    assert.strictEqual(missingData.code, "missing_command");
+    assert.strictEqual(missingData.error, "Missing command");
+
+    const unknown = await post({ command: "does-not-exist" });
+    assert.strictEqual(unknown.status, 400);
+    const unknownData = await unknown.json();
+    assert.strictEqual(unknownData.code, "unknown_command");
+    assert.strictEqual(unknownData.error, "Unknown command");
+
+    const badArg = await post({ command: "doctor", args: { nope: "x" } });
+    assert.strictEqual(badArg.status, 400);
+    const badArgData = await badArg.json();
+    assert.strictEqual(badArgData.code, "unknown_arg");
+    assert.strictEqual(badArgData.name, "nope");
+    assert.strictEqual(badArgData.error, "Unknown arg: nope");
+
+    const badOption = await post({
+      command: "doctor",
+      options: { nope: true },
+    });
+    assert.strictEqual(badOption.status, 400);
+    const badOptionData = await badOption.json();
+    assert.strictEqual(badOptionData.code, "unknown_option");
+    assert.strictEqual(badOptionData.name, "nope");
+    assert.strictEqual(badOptionData.error, "Unknown option: nope");
+
     await server.close();
   });
 
@@ -646,6 +752,38 @@ describe("server.mjs integration", () => {
 
     assert.ok(resultEvent, "No result event received");
     assert.strictEqual(resultEvent.exitCode, 0);
+    await server.close();
+  });
+
+  test("POST /api/run emits a starting event with argv", async () => {
+    server = await startServer({ port: 0, reaCommand, open: false });
+    const res = await fetch(new URL("/api/run", server.url), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-REA-GUI-Token": server.token,
+      },
+      body: JSON.stringify({ command: "capabilities", args: {}, options: {} }),
+    });
+    assert.strictEqual(res.status, 200);
+    const reader = res.body.getReader();
+    let startingEvent = null;
+    for (let attempt = 0; attempt < 5 && !startingEvent; attempt++) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = new TextDecoder().decode(value);
+      for (const block of chunk.split("\n\n")) {
+        if (!block.startsWith("event: starting")) continue;
+        const dataLine = block
+          .split("\n")
+          .find((line) => line.startsWith("data: "));
+        if (dataLine) startingEvent = JSON.parse(dataLine.slice(6));
+      }
+    }
+    await reader.cancel();
+    assert.ok(startingEvent, "No starting event received");
+    assert.ok(Array.isArray(startingEvent.argv));
+    assert.ok(startingEvent.argv.includes("capabilities"));
     await server.close();
   });
 });

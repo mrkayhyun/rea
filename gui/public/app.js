@@ -33,16 +33,123 @@ import { SUPPORTED, detectLang, translate } from "./i18n.js";
     "Other",
   ];
   const CATEGORY_ICONS = {
-    "Start here": "★",
-    "JavaScript & Electron": "🟨",
-    "Web & browser": "🌐",
-    "Native binaries": "⚙",
-    Android: "🤖",
-    ".NET & managed": "⬢",
-    "Evidence & compare": "🔍",
-    Environments: "🖥",
-    Other: "▧",
+    "Start here": "star",
+    "JavaScript & Electron": "code",
+    "Web & browser": "globe",
+    "Native binaries": "gear",
+    Android: "robot",
+    ".NET & managed": "hexagon",
+    "Evidence & compare": "search",
+    Environments: "monitor",
+    Other: "grid",
   };
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const ICON_SHAPES = {
+    sun: {
+      parts: [
+        ["circle", { cx: "12", cy: "12", r: "4" }],
+        [
+          "path",
+          {
+            d: "M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4",
+          },
+        ],
+      ],
+    },
+    moon: {
+      parts: [["path", { d: "M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" }]],
+    },
+    star: {
+      parts: [
+        [
+          "path",
+          {
+            d: "m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1L3.2 9.5l6.1-.9Z",
+          },
+        ],
+      ],
+    },
+    code: {
+      parts: [
+        [
+          "path",
+          {
+            d: "M9 4H7a2 2 0 0 0-2 2v3a2 2 0 0 1-2 2 2 2 0 0 1 2 2v3a2 2 0 0 0 2 2h2M15 4h2a2 2 0 0 1 2 2v3a2 2 0 0 0 2 2 2 2 0 0 0-2 2v3a2 2 0 0 1-2 2h-2",
+          },
+        ],
+      ],
+    },
+    globe: {
+      parts: [
+        ["circle", { cx: "12", cy: "12", r: "9" }],
+        [
+          "path",
+          { d: "M3 12h18M12 3c2.8 3 2.8 15 0 18M12 3c-2.8 3-2.8 15 0 18" },
+        ],
+      ],
+    },
+    gear: {
+      parts: [
+        ["circle", { cx: "12", cy: "12", r: "4" }],
+        [
+          "path",
+          {
+            d: "M12 2v3M12 19v3M2 12h3M19 12h3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M19.8 4.2l-2.1 2.1M6.3 17.7l-2.1 2.1",
+          },
+        ],
+      ],
+    },
+    robot: {
+      parts: [
+        [
+          "path",
+          {
+            d: "M8 8h8a3 3 0 0 1 3 3v6H5v-6a3 3 0 0 1 3-3ZM9 8 7 4M15 8l2-4M9 12v1M15 12v1M5 17v3M19 17v3",
+          },
+        ],
+      ],
+    },
+    hexagon: {
+      parts: [["path", { d: "M12 3 20 7.5v9L12 21l-8-4.5v-9Z" }]],
+    },
+    search: {
+      parts: [
+        ["circle", { cx: "9", cy: "9", r: "6" }],
+        ["path", { d: "m14 14 6 6" }],
+      ],
+    },
+    monitor: {
+      parts: [["path", { d: "M3 5h18v11H3zM8 20h8M12 16v4" }]],
+    },
+    grid: {
+      parts: [
+        ["path", { d: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" }],
+      ],
+    },
+    play: {
+      parts: [["path", { d: "M7 4.5 20 12 7 19.5Z" }]],
+    },
+  };
+  function svgIcon(kind, className) {
+    const shape = ICON_SHAPES[kind] || ICON_SHAPES.grid;
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    className && svg.setAttribute("class", className);
+    for (const [tag, attrs] of shape.parts) {
+      const node = document.createElementNS(SVG_NS, tag);
+      for (const [name, value] of Object.entries(attrs))
+        node.setAttribute(name, value);
+      svg.appendChild(node);
+    }
+    return svg;
+  }
   const THEME_KEY = "rea-gui-theme";
   const LANG_KEY = "rea-gui-lang";
   function readStoredLang() {
@@ -73,6 +180,8 @@ import { SUPPORTED, detectLang, translate } from "./i18n.js";
     resultText: "",
     lastPayload: null,
     gotResult: false,
+    running: false,
+    progressCollapsed: false,
     bannerKey: null,
     bannerVars: null,
   };
@@ -103,6 +212,14 @@ import { SUPPORTED, detectLang, translate } from "./i18n.js";
     $("banner").textContent = "";
     $("banner").classList.add("hidden");
   }
+  function errorMessage(data, fallback) {
+    if (data && "string" == typeof data.code && data.code) {
+      const key = "error." + data.code;
+      const localized = t(key, { name: data.name });
+      if (localized !== key) return localized;
+    }
+    return (data && (data.error || data.message)) || fallback;
+  }
   async function requestJSON(url, options) {
     const res = await fetch(url, options);
     const text = await res.text();
@@ -114,10 +231,7 @@ import { SUPPORTED, detectLang, translate } from "./i18n.js";
     }
     if (res.ok) return data;
     throw new Error(
-      (data && (data.error || data.message)) ||
-        t("error.request", {
-          status: res.status,
-        }),
+      errorMessage(data, t("error.request", { status: res.status })),
     );
   }
   function systemPrefersDark() {
@@ -145,7 +259,8 @@ import { SUPPORTED, detectLang, translate } from "./i18n.js";
     document.documentElement.style.colorScheme = resolved;
     const button = $("theme-btn");
     if (button) {
-      button.textContent = "dark" === resolved ? "☀" : "☾";
+      button.textContent = "";
+      button.appendChild(svgIcon("dark" === resolved ? "sun" : "moon"));
       const label = t(
         "theme." + ("light" === pref || "dark" === pref ? pref : "system"),
       );
@@ -404,7 +519,7 @@ import { SUPPORTED, detectLang, translate } from "./i18n.js";
       const requiredArgs = args.required.filter((name) =>
         argNames.includes(name),
       );
-      const section = makeFormCard("form.arguments", 0 < requiredArgs.length);
+      const section = makeFormCard("form.arguments", false);
       for (let key of argNames) {
         const built = buildField(
           "arg",
@@ -424,7 +539,7 @@ import { SUPPORTED, detectLang, translate } from "./i18n.js";
       const optionalOptions = optionNames.filter(
         (key) => !options.required.includes(key),
       );
-      const section = makeFormCard("form.options", 0 < requiredOptions.length);
+      const section = makeFormCard("form.options", false);
       for (const key of requiredOptions) {
         const built = buildField("option", key, options.properties[key], true);
         section.body.appendChild(built.row);
@@ -510,13 +625,28 @@ import { SUPPORTED, detectLang, translate } from "./i18n.js";
       options: options,
     };
   }
+  function updateRunButton() {
+    const button = $("run-btn");
+    const running = Boolean(state.running);
+    button.classList.toggle("running", running);
+    button.setAttribute("aria-busy", String(running));
+    const icon = button.querySelector(".run-icon");
+    const spinner = button.querySelector(".spinner");
+    const label = button.querySelector(".run-label");
+    if (icon) icon.classList.toggle("hidden", running);
+    if (spinner) spinner.classList.toggle("hidden", !running);
+    if (label)
+      label.textContent = t(running ? "status.running" : "actions.run");
+  }
   function setRunning(running) {
+    state.running = Boolean(running);
     $("run-btn").disabled = running;
     $("stop-btn").disabled = !running;
     if (running) {
       $("run-status").textContent = t("status.running");
       setProgress(0, null, true);
     }
+    updateRunButton();
   }
   function setProgress(completed, total, indeterminate) {
     const bar = $("progress-bar");
@@ -532,8 +662,25 @@ import { SUPPORTED, detectLang, translate } from "./i18n.js";
       $("progress-label").textContent = "";
     }
   }
+  function updateProgressToggle() {
+    const button = $("progress-toggle");
+    const list = $("progress");
+    if (!button || !list) return;
+    const hasSteps = Boolean(list.children.length);
+    button.classList.toggle("hidden", !hasSteps);
+    button.textContent = t(
+      state.progressCollapsed ? "progress.showSteps" : "progress.hideSteps",
+    );
+    button.setAttribute("aria-expanded", String(!state.progressCollapsed));
+    list.classList.toggle("collapsed", state.progressCollapsed);
+  }
+  function setProgressCollapsed(collapsed) {
+    state.progressCollapsed = Boolean(collapsed);
+    updateProgressToggle();
+  }
   function resetOutput() {
     $("progress").textContent = "";
+    state.progressCollapsed = false;
     const result = $("result");
     result.textContent = "";
     result.className = "result";
@@ -547,6 +694,7 @@ import { SUPPORTED, detectLang, translate } from "./i18n.js";
     exit.className = "exit-badge hidden";
     $("run-status").textContent = "";
     setProgress(0, null, false);
+    updateProgressToggle();
   }
   function markDone() {
     if (state.lastStep) {
@@ -578,7 +726,8 @@ import { SUPPORTED, detectLang, translate } from "./i18n.js";
     }
     list.appendChild(item);
     for (; 300 < list.children.length;) list.removeChild(list.firstChild);
-    list.scrollTop = list.scrollHeight;
+    if (!state.progressCollapsed) list.scrollTop = list.scrollHeight;
+    updateProgressToggle();
     $("run-status").textContent = String(message);
     isLog ||
       (meta && "number" == typeof meta.total && 0 < Number(meta.total)
@@ -588,6 +737,9 @@ import { SUPPORTED, detectLang, translate } from "./i18n.js";
   function finishProgress() {
     markDone();
     setProgress(1, null, false);
+  }
+  function collapseProgressIfNeeded() {
+    if ($("progress").children.length) setProgressCollapsed(true);
   }
   function jsonBranch(key, value) {
     const isArray = Array.isArray(value);
@@ -767,20 +919,20 @@ import { SUPPORTED, detectLang, translate } from "./i18n.js";
               ? data
               : null;
         addProgress(info && info.message ? info.message : raw, false, info);
+      } else if ("starting" === event) {
+        const cmd =
+          data && Array.isArray(data.argv)
+            ? data.argv.join(" ")
+            : data && data.cmd
+              ? String(data.cmd)
+              : raw;
+        addProgress(t("log.starting", { cmd }), true, null);
       } else if ("log" === event)
         addProgress("string" == typeof data ? data : raw, true, null);
       else if ("result" === event) {
         showResult(data);
         $("run-status").textContent = "";
-      } else
-        "error" === event &&
-          showBanner(
-            String(
-              data && (data.error || data.message)
-                ? data.error || data.message
-                : raw,
-            ),
-          );
+      } else "error" === event && showBanner(String(errorMessage(data, raw)));
     }
   }
   async function readStream(body) {
@@ -832,12 +984,9 @@ import { SUPPORTED, detectLang, translate } from "./i18n.js";
         });
         if (!res.ok) {
           const text = await res.text();
-          let message = t("error.request", {
-            status: res.status,
-          });
+          let message = t("error.request", { status: res.status });
           try {
-            const parsed = JSON.parse(text);
-            message = parsed.error || parsed.message || message;
+            message = errorMessage(JSON.parse(text), message);
           } catch {}
           throw new Error(message);
         }
@@ -852,6 +1001,7 @@ import { SUPPORTED, detectLang, translate } from "./i18n.js";
         setRunning(false);
         markDone();
         state.gotResult || setProgress(1, null, false);
+        collapseProgressIfNeeded();
       }
     }
   }
@@ -890,9 +1040,11 @@ import { SUPPORTED, detectLang, translate } from "./i18n.js";
           const details = el("details", "group");
           (query || openGroups.has(category)) && (details.open = true);
           const summary = el("summary", "group-title");
-          summary.appendChild(
-            el("span", "group-icon", CATEGORY_ICONS[category] || "•"),
+          const groupIcon = el("span", "group-icon");
+          groupIcon.appendChild(
+            svgIcon(CATEGORY_ICONS[category] || "grid", "group-icon-svg"),
           );
+          summary.appendChild(groupIcon);
           summary.appendChild(el("span", "group-name", t("cat." + category)));
           summary.appendChild(
             el("span", "count", String(groups.get(category).length)),
@@ -1158,6 +1310,8 @@ import { SUPPORTED, detectLang, translate } from "./i18n.js";
     else if (state.doctorLoaded) renderDoctor(state.doctor);
     else if (state.doctorLoading) renderDoctorLoading();
     if (state.bannerKey) setBannerText(t(state.bannerKey, state.bannerVars));
+    updateRunButton();
+    updateProgressToggle();
   }
   function setView(view) {
     const isEnv = "env" === view;
@@ -1171,6 +1325,8 @@ import { SUPPORTED, detectLang, translate } from "./i18n.js";
     isEnv && (state.doctorLoaded ? renderDoctor(state.doctor) : loadDoctor());
   }
   function init() {
+    const runIcon = $("run-btn").querySelector(".run-icon");
+    runIcon && runIcon.appendChild(svgIcon("play"));
     fillStaticStrings();
     renderLangToggle();
     applyTheme(readThemePref());
@@ -1200,6 +1356,9 @@ import { SUPPORTED, detectLang, translate } from "./i18n.js";
     );
     $("expand-all").addEventListener("click", () => setAllBranches(true));
     $("collapse-all").addEventListener("click", () => setAllBranches(false));
+    $("progress-toggle").addEventListener("click", () =>
+      setProgressCollapsed(!state.progressCollapsed),
+    );
     $("run-form").addEventListener("submit", (event) => {
       event.preventDefault();
       runCommand();
