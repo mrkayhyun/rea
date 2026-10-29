@@ -6,100 +6,185 @@
     <meta name="rea-gui-token" content="__REA_GUI_TOKEN__" />
     <title>REA GUI</title>
     <link rel="stylesheet" href="/app.css" />
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("rea-gui-theme");
+          var pref =
+            stored === "light" || stored === "dark" ? stored : "system";
+          var resolved =
+            pref === "system"
+              ? window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light"
+              : pref;
+          document.documentElement.setAttribute("data-theme", resolved);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <header class="topbar">
-      <div class="brand">REA <span>local GUI</span></div>
-      <div class="tabs" role="tablist" aria-label="Views">
+      <div class="brand">
+        <span class="logo" aria-hidden="true"></span>
+        <span class="brand-name">REA</span>
+        <span class="brand-sub" data-i18n="brand.sub"></span>
+      </div>
+      <div class="tabs" role="tablist" data-i18n-aria="tabs.aria">
         <button
           id="tab-commands"
           class="tab active"
           role="tab"
           aria-selected="true"
           type="button"
-        >
-          Commands
-        </button>
+          data-i18n="tab.commands"
+        ></button>
         <button
           id="tab-env"
           class="tab"
           role="tab"
           aria-selected="false"
           type="button"
-        >
-          Environment
-        </button>
+          data-i18n="tab.env"
+        ></button>
       </div>
-      <div id="rea-version" class="version"></div>
+      <div class="topbar-right">
+        <div id="rea-version" class="version"></div>
+        <div id="lang-slot"></div>
+        <button id="theme-btn" class="icon-btn" type="button"></button>
+      </div>
     </header>
 
     <main class="layout">
       <aside id="sidebar" class="sidebar">
         <div class="search-wrap">
+          <svg class="search-icon" viewBox="0 0 20 20" aria-hidden="true">
+            <path
+              d="M9 3a6 6 0 1 0 3.7 10.7l3.3 3.3 1.4-1.4-3.3-3.3A6 6 0 0 0 9 3Zm0 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z"
+            />
+          </svg>
           <input
             id="search"
             type="search"
-            placeholder="Search commands…"
             autocomplete="off"
-            aria-label="Search commands"
+            data-i18n-placeholder="search.placeholder"
+            data-i18n-aria="search.aria"
           />
         </div>
-        <nav id="command-list" class="command-list" aria-label="Commands"></nav>
+        <nav
+          id="command-list"
+          class="command-list"
+          data-i18n-aria="sidebar.aria"
+        ></nav>
       </aside>
 
       <section class="pane">
         <div id="banner" class="banner hidden" role="alert"></div>
 
         <div id="view-commands">
-          <div id="empty" class="placeholder">Loading commands…</div>
+          <div id="empty" class="empty-state">
+            <div class="placeholder" data-i18n="sidebar.loading"></div>
+          </div>
 
           <div id="command-view" class="hidden">
-            <h1 id="cmd-name"></h1>
-            <p id="cmd-desc" class="desc"></p>
+            <section class="card cmd-header">
+              <div class="cmd-header-main">
+                <h1 id="cmd-name"></h1>
+                <p id="cmd-desc" class="desc"></p>
+              </div>
+              <div id="cmd-chips" class="cmd-chips"></div>
+            </section>
 
             <form id="run-form" class="form" autocomplete="off"></form>
 
-            <div class="preview-wrap">
-              <div class="preview-label">Command preview</div>
-              <code id="preview" class="preview">rea --format json</code>
-            </div>
+            <section class="card preview-wrap">
+              <div class="preview-head">
+                <span class="section-label" data-i18n="preview.label"></span>
+                <button
+                  id="copy-preview"
+                  class="btn small"
+                  type="button"
+                  data-i18n="common.copy"
+                ></button>
+              </div>
+              <code id="preview" class="preview"></code>
+            </section>
 
             <div class="actions">
               <button id="run-btn" class="btn primary" type="button">
-                Run
+                <span class="run-icon" aria-hidden="true">▶</span>
+                <span data-i18n="actions.run"></span>
               </button>
-              <button id="stop-btn" class="btn" type="button" disabled>
-                Stop
-              </button>
+              <button
+                id="stop-btn"
+                class="btn danger"
+                type="button"
+                disabled
+                data-i18n="actions.stop"
+              ></button>
+              <span
+                id="shortcut-hint"
+                class="hint"
+                data-i18n="actions.shortcut"
+              ></span>
               <span id="run-status" class="status"></span>
             </div>
 
-            <div class="output">
-              <div class="output-head"><span>Progress</span></div>
+            <section class="card output">
+              <div class="progress-head">
+                <span class="section-label" data-i18n="progress.title"></span>
+                <div id="progress-bar" class="progress-bar">
+                  <div id="progress-fill" class="progress-fill"></div>
+                </div>
+                <span id="progress-label" class="progress-label"></span>
+              </div>
               <ul id="progress" class="progress"></ul>
 
               <div id="result-wrap" class="result-wrap hidden">
-                <div class="output-head">
-                  <span>Result <span id="exit-code" class="exit"></span></span>
-                  <button id="copy-btn" class="btn small" type="button">
-                    Copy
-                  </button>
+                <div class="result-head">
+                  <div class="result-title">
+                    <span data-i18n="result.title"></span>
+                    <span id="exit-code" class="exit-badge hidden"></span>
+                  </div>
+                  <div class="result-actions">
+                    <button
+                      id="expand-all"
+                      class="btn small"
+                      type="button"
+                      data-i18n="result.expandAll"
+                    ></button>
+                    <button
+                      id="collapse-all"
+                      class="btn small"
+                      type="button"
+                      data-i18n="result.collapseAll"
+                    ></button>
+                    <button
+                      id="copy-btn"
+                      class="btn small"
+                      type="button"
+                      data-i18n="common.copy"
+                    ></button>
+                  </div>
                 </div>
-                <pre id="result" class="result"></pre>
+                <div id="result" class="result"></div>
               </div>
-            </div>
+            </section>
           </div>
         </div>
 
         <div id="view-env" class="hidden">
           <div class="env-head">
-            <h1>Environment</h1>
-            <button id="refresh-doctor" class="btn" type="button">
-              Refresh
-            </button>
+            <h1 data-i18n="env.title"></h1>
+            <button
+              id="refresh-doctor"
+              class="btn"
+              type="button"
+              data-i18n="env.refresh"
+            ></button>
           </div>
           <div id="doctor" class="doctor">
-            <div class="placeholder">Checking environment…</div>
+            <div class="placeholder" data-i18n="env.loading"></div>
           </div>
         </div>
       </section>
