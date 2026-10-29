@@ -168,6 +168,37 @@ textarea {
   color: var(--text);
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
 }
+.lang-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.lang-opt {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  padding: 3px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+.lang-opt:hover {
+  color: var(--text);
+}
+.lang-opt.active {
+  background: var(--panel);
+  border-color: var(--border);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+}
 .topbar-right {
   margin-left: auto;
   display: flex;
@@ -683,6 +714,17 @@ textarea {
 }
 .btn.primary:hover:not(:disabled) {
   filter: brightness(1.06);
+}
+html[data-theme="dark"] .btn.primary {
+  background: linear-gradient(135deg, #4f6bff, #7c5cff);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.12) inset,
+    0 6px 18px rgba(79, 107, 255, 0.4);
+}
+html[data-theme="dark"] .btn.primary:hover:not(:disabled) {
+  filter: brightness(1.12);
 }
 .btn.danger {
   color: var(--bad);

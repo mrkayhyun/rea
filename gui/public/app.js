@@ -1,95 +1,11 @@
-"use strict";
+import { SUPPORTED, detectLang, translate } from "./i18n.js";
+
 (() => {
-  const STRINGS_EN = {
-    "app.title": "REA GUI",
-    "brand.sub": "GUI",
-    "tabs.aria": "Views",
-    "tab.commands": "Commands",
-    "tab.env": "Environment",
-    "search.placeholder": "Search commands…",
-    "search.aria": "Search commands",
-    "sidebar.aria": "Commands",
-    "sidebar.loading": "Loading commands…",
-    "sidebar.noMatch": "No matching commands",
-    "theme.system": "Theme: system",
-    "theme.light": "Theme: light",
-    "theme.dark": "Theme: dark",
-    "cat.Start here": "Start here",
-    "cat.JavaScript & Electron": "JavaScript & Electron",
-    "cat.Web & browser": "Web & browser",
-    "cat.Native binaries": "Native binaries",
-    "cat.Android": "Android",
-    "cat..NET & managed": ".NET & managed",
-    "cat.Evidence & compare": "Evidence & compare",
-    "cat.Environments": "Environments",
-    "cat.Other": "Other",
-    "empty.title": "Welcome to REA GUI",
-    "empty.body":
-      "Pick a command from the sidebar, or start with one of these.",
-    "empty.env": "Environment",
-    "empty.envDesc": "See what works without extra engines.",
-    "empty.analyzeDesc": "Inspect an Electron or Node application.",
-    "empty.doctorDesc": "Check toolchains and configuration.",
-    "form.arguments": "Arguments",
-    "form.options": "Options",
-    "form.required": "required",
-    "form.optional": "Optional settings ({n})",
-    "form.none": "This command takes no inputs.",
-    "form.onePerLine": "One item per line",
-    "form.enable": "Enable",
-    "form.noneOption": "—",
-    "preview.label": "Command preview",
-    "actions.run": "Run",
-    "actions.stop": "Stop",
-    "actions.shortcut": "Ctrl/Cmd + Enter",
-    "status.running": "Running…",
-    "status.stopped": "Stopped",
-    "progress.title": "Progress",
-    "result.title": "Result",
-    "result.expandAll": "Expand all",
-    "result.collapseAll": "Collapse all",
-    "common.copy": "Copy",
-    "common.copied": "Copied!",
-    "common.copyFailed": "Copy failed",
-    "json.object": "Object",
-    "json.array": "Array",
-    "json.keys": "{n} keys",
-    "json.items": "{n} items",
-    "env.title": "Environment",
-    "env.refresh": "Refresh",
-    "env.loading": "Checking environment…",
-    "env.failed": "Environment check failed: {error}",
-    "env.ready": "Ready",
-    "env.needs": "Needs engine",
-    "env.other": "Other",
-    "env.worksNow": "Works now (no engine)",
-    "env.needsEngine": "Needs an engine",
-    "env.otherChecks": "Other checks",
-    "env.engineFree": "Engine-free commands",
-    "env.noReady": "No engine-free capabilities were reported.",
-    "env.noNeeds": "No missing engines were reported.",
-    "env.noOther": "No other checks were reported.",
-    "env.fix": "Fix",
-    "env.chipTitle": "Open {name}",
-    "chip.engineFree": "engine-free",
-    "error.catalog": "Could not load commands.",
-    "error.catalogDetail":
-      "Could not load the rea catalog: {error}. Make sure rea is installed, or start the server with --rea <path>.",
-    "error.request": "Request failed ({status})",
-    "error.noStream": "This browser cannot read streaming responses.",
-    "error.unknownCommand": "Command not found.",
-    "error.requiredMissing": "Required value missing: {name}",
-    "result.exit": "exit {code}",
-    "version.label": "rea {version}",
-  };
   function t(key, vars) {
-    let value = void 0 !== STRINGS_EN[key] ? STRINGS_EN[key] : key;
-    if (vars)
-      for (let name of Object.keys(vars))
-        value = value.split("{" + name + "}").join(String(vars[name]));
-    return value;
+    return translate(state.lang, key, vars);
   }
   function fillStaticStrings() {
+    document.documentElement.lang = state.lang;
     document.title = t("app.title");
     for (let node of document.querySelectorAll("[data-i18n]"))
       node.textContent = t(node.getAttribute("data-i18n"));
@@ -128,18 +44,37 @@
     Other: "▧",
   };
   const THEME_KEY = "rea-gui-theme";
+  const LANG_KEY = "rea-gui-lang";
+  function readStoredLang() {
+    try {
+      return localStorage.getItem(LANG_KEY);
+    } catch {
+      return null;
+    }
+  }
+  const NAVIGATOR_LANGUAGES =
+    Array.isArray(navigator.languages) && navigator.languages.length
+      ? navigator.languages
+      : [navigator.language || ""];
   const state = {
+    lang: detectLang(readStoredLang(), NAVIGATOR_LANGUAGES),
     catalog: null,
+    catalogError: null,
+    reaVersion: "",
     selected: null,
     fields: [],
     controller: null,
     doctor: null,
     doctorLoaded: false,
     doctorLoading: false,
+    doctorError: null,
     engineFree: new Set(),
     lastStep: null,
     resultText: "",
+    lastPayload: null,
     gotResult: false,
+    bannerKey: null,
+    bannerVars: null,
   };
   const openGroups = new Set(["Start here"]);
   function el(tag, className, text) {
@@ -148,11 +83,23 @@
     void 0 !== text && (node.textContent = text);
     return node;
   }
-  function showBanner(message) {
+  function setBannerText(message) {
     $("banner").textContent = message;
     $("banner").classList.remove("hidden");
   }
+  function showBanner(message) {
+    state.bannerKey = null;
+    state.bannerVars = null;
+    setBannerText(message);
+  }
+  function showBannerKey(key, vars) {
+    setBannerText(t(key, vars));
+    state.bannerKey = key;
+    state.bannerVars = vars || null;
+  }
   function clearBanner() {
+    state.bannerKey = null;
+    state.bannerVars = null;
     $("banner").textContent = "";
     $("banner").classList.add("hidden");
   }
@@ -411,7 +358,26 @@
     state.engineFree.has(command.name) &&
       box.appendChild(el("span", "chip engine-chip", t("chip.engineFree")));
   }
-  function renderCommand(command) {
+  function snapshotFieldValues() {
+    const snapshot = new Map();
+    for (const field of state.fields)
+      snapshot.set(field.kind + ":" + field.key, {
+        value: field.input.value,
+        checked: Boolean(field.input.checked),
+      });
+    return snapshot;
+  }
+  function restoreFieldValues(snapshot) {
+    for (const field of state.fields) {
+      const saved = snapshot.get(field.kind + ":" + field.key);
+      if (!saved) continue;
+      if ("checkbox" === field.input.type) field.input.checked = saved.checked;
+      else field.input.value = saved.value;
+    }
+  }
+  function renderCommand(command, renderOptions) {
+    const opts = renderOptions || {};
+    const snapshot = opts.preserveValues ? snapshotFieldValues() : null;
     state.selected = command;
     $("cmd-name").textContent = command.name;
     $("cmd-desc").textContent = command.description || "";
@@ -491,10 +457,13 @@
       }
       form.appendChild(section.card);
     }
+    if (snapshot) restoreFieldValues(snapshot);
     $("empty").classList.add("hidden");
     $("command-view").classList.remove("hidden");
-    resetOutput();
-    clearBanner();
+    if (false !== opts.resetOutput) {
+      resetOutput();
+      clearBanner();
+    }
     updatePreview();
   }
   function quote(value) {
@@ -570,6 +539,7 @@
     result.className = "result";
     state.lastStep = null;
     state.resultText = "";
+    state.lastPayload = null;
     state.gotResult = false;
     $("result-wrap").classList.add("hidden");
     const exit = $("exit-code");
@@ -724,6 +694,7 @@
         text = String(output);
       }
     state.resultText = text;
+    state.lastPayload = payload;
     state.gotResult = true;
     const result = $("result");
     result.textContent = "";
@@ -839,12 +810,9 @@
       clearBanner();
       for (let field of state.fields)
         if (field.required && field.isEmpty()) {
-          showBanner(
-            t("error.requiredMissing", {
-              name:
-                "arg" === field.kind ? field.key : "--" + flagName(field.key),
-            }),
-          );
+          showBannerKey("error.requiredMissing", {
+            name: "arg" === field.kind ? field.key : "--" + flagName(field.key),
+          });
           field.input.focus && field.input.focus();
           return;
         }
@@ -967,7 +935,7 @@
         if (command) {
           setView("commands");
           selectCommand(command);
-        } else showBanner(t("error.unknownCommand"));
+        } else showBannerKey("error.unknownCommand");
       }
     });
     return button;
@@ -994,24 +962,30 @@
     card.appendChild(links);
     root.appendChild(card);
   }
+  function renderVersion() {
+    $("rea-version").textContent = state.reaVersion
+      ? t("version.label", { version: state.reaVersion })
+      : "";
+  }
+  function renderCatalogError() {
+    $("empty").textContent = "";
+    $("empty").appendChild(el("div", "placeholder", t("error.catalog")));
+  }
   async function loadCatalog() {
     try {
       state.catalog = await requestJSON("/api/catalog");
-      const version = state.catalog && state.catalog.reaVersion;
-      $("rea-version").textContent = version
-        ? t("version.label", { version: version })
-        : "";
+      state.catalogError = null;
+      state.reaVersion = (state.catalog && state.catalog.reaVersion) || "";
+      renderVersion();
       renderEmpty();
       renderSidebar();
       state.doctorLoaded && renderDoctor(state.doctor);
     } catch (err) {
-      $("empty").textContent = "";
-      $("empty").appendChild(el("div", "placeholder", t("error.catalog")));
-      showBanner(
-        t("error.catalogDetail", {
-          error: err && err.message ? err.message : String(err),
-        }),
-      );
+      state.catalogError = err;
+      renderCatalogError();
+      showBannerKey("error.catalogDetail", {
+        error: err && err.message ? err.message : String(err),
+      });
     }
   }
   function statCard(labelKey, value, tone) {
@@ -1064,11 +1038,14 @@
       for (let item of needs) {
         const card = el("section", "env-card card needs");
         card.appendChild(el("h2", null, item.name || ""));
-        item.detail &&
-          card.appendChild(el("p", "env-detail", String(item.detail)));
-        if (item.remediation) {
+        const detail = item.detail ? String(item.detail) : "";
+        const remediation = item.remediation ? String(item.remediation) : "";
+        detail &&
+          detail !== remediation &&
+          card.appendChild(el("p", "env-detail", detail));
+        if (remediation) {
           card.appendChild(el("div", "env-sub", t("env.fix")));
-          card.appendChild(el("pre", "fix-box", String(item.remediation)));
+          card.appendChild(el("pre", "fix-box", remediation));
         }
         grid.appendChild(card);
       }
@@ -1094,16 +1071,35 @@
     } else otherCard.appendChild(el("p", "env-empty", t("env.noOther")));
     root.appendChild(otherCard);
   }
+  function renderDoctorLoading() {
+    const root = $("doctor");
+    root.textContent = "";
+    root.appendChild(el("div", "placeholder", t("env.loading")));
+  }
+  function renderDoctorError() {
+    const root = $("doctor");
+    root.textContent = "";
+    const err = state.doctorError;
+    root.appendChild(
+      el(
+        "div",
+        "placeholder",
+        t("env.failed", {
+          error: err && err.message ? err.message : String(err),
+        }),
+      ),
+    );
+  }
   async function loadDoctor() {
     if (!state.doctorLoading) {
       state.doctorLoading = true;
-      const root = $("doctor");
-      root.textContent = "";
-      root.appendChild(el("div", "placeholder", t("env.loading")));
+      state.doctorError = null;
+      renderDoctorLoading();
       try {
         const data = await requestJSON("/api/doctor");
         state.doctor = (data && data.summary) || {};
         state.doctorLoaded = true;
+        state.doctorError = null;
         const list = Array.isArray(state.doctor.engineFree)
           ? state.doctor.engineFree
           : [];
@@ -1111,20 +1107,57 @@
         state.selected && renderCommandChips(state.selected);
         renderDoctor(state.doctor);
       } catch (err) {
-        root.textContent = "";
-        root.appendChild(
-          el(
-            "div",
-            "placeholder",
-            t("env.failed", {
-              error: err && err.message ? err.message : String(err),
-            }),
-          ),
-        );
+        state.doctorError = err;
+        renderDoctorError();
       } finally {
         state.doctorLoading = false;
       }
     }
+  }
+  function renderLangToggle() {
+    const slot = $("lang-slot");
+    slot.textContent = "";
+    const control = el("div", "lang-switch");
+    control.setAttribute("role", "group");
+    control.setAttribute("aria-label", t("lang.aria"));
+    for (const code of SUPPORTED) {
+      const active = state.lang === code;
+      const button = el(
+        "button",
+        "lang-opt" + (active ? " active" : ""),
+        t("lang." + code),
+      );
+      button.type = "button";
+      button.setAttribute("aria-pressed", String(active));
+      button.addEventListener("click", () => {
+        if (state.lang !== code) applyLanguage(code);
+      });
+      control.appendChild(button);
+    }
+    slot.appendChild(control);
+  }
+  function applyLanguage(lang) {
+    state.lang = SUPPORTED.includes(lang) ? lang : "en";
+    try {
+      localStorage.setItem(LANG_KEY, state.lang);
+    } catch {}
+    fillStaticStrings();
+    renderLangToggle();
+    applyTheme(readThemePref());
+    renderVersion();
+    renderSidebar();
+    if (state.catalogError) renderCatalogError();
+    else if (state.catalog) renderEmpty();
+    if (state.selected)
+      renderCommand(state.selected, {
+        preserveValues: true,
+        resetOutput: false,
+      });
+    if (state.gotResult && state.lastPayload) showResult(state.lastPayload);
+    if (state.doctorError) renderDoctorError();
+    else if (state.doctorLoaded) renderDoctor(state.doctor);
+    else if (state.doctorLoading) renderDoctorLoading();
+    if (state.bannerKey) setBannerText(t(state.bannerKey, state.bannerVars));
   }
   function setView(view) {
     const isEnv = "env" === view;
@@ -1139,6 +1172,7 @@
   }
   function init() {
     fillStaticStrings();
+    renderLangToggle();
     applyTheme(readThemePref());
     if (window.matchMedia) {
       const media = window.matchMedia("(prefers-color-scheme: dark)");

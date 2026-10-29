@@ -78,6 +78,12 @@ REA GUI server running at http://127.0.0.1:7700/
   - **Needs an engine**: each missing engine with detail and remediation (Fix: …)
   - **Other checks**: config drift, registration issues, etc.
 
+## 한국어 사용법 (Korean)
+
+- **시작하기**: 저장소 체크아웃에서 `node gui/server.mjs`를 실행한 뒤 출력된 `http://127.0.0.1:7700/` 주소를 엽니다. 전역 설치를 사용한다면 `node gui/server.mjs --rea "$(npm root -g)/rea-agents/scripts/rea.mjs"`로 실행합니다.
+- **언어 전환**: 상단 바의 `EN | 한국어` 세그먼트 컨트롤을 누르면 새로고침 없이 모든 UI 문구가 즉시 바뀝니다. 현재 선택한 명령과 입력값은 그대로 유지되며, 선택한 언어는 `localStorage`의 `rea-gui-lang` 키에 저장됩니다. 저장된 값이 없으면 브라우저 언어가 한국어일 때 한국어로 시작합니다.
+- **환경 탭**: `rea doctor --format json` 결과를 보여줍니다. **엔진 없이 바로 사용 가능**에는 지금 바로 실행할 수 있는 명령 칩이, **엔진 필요**에는 누락된 엔진과 상세 설명 및 **해결 방법**이, **기타 점검**에는 구성 드리프트 같은 나머지 항목이 표시됩니다. **새로고침**으로 다시 확인할 수 있습니다.
+
 ## Security model
 
 - Binds **only `127.0.0.1`** (never `0.0.0.0`)
@@ -112,7 +118,7 @@ REA GUI server running at http://127.0.0.1:7700/
 ## Run the GUI tests
 
 ```bash
-node --test gui/test/
+node --test gui/test/gui.test.mjs
 ```
 
 (Tests use the same `startServer` export and exercise catalog, doctor, and run endpoints.)

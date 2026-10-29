@@ -1,7 +1,7 @@
 import { test, describe, before, after, mock } from "node:test";
 import assert from "node:assert";
 import { request as httpRequest } from "node:http";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -12,6 +12,7 @@ import {
   classifyDoctor,
   ENGINE_FREE_COMMANDS,
 } from "../lib.mjs";
+import { MESSAGES, SUPPORTED, detectLang, translate } from "../public/i18n.js";
 import { startServer } from "../server.mjs";
 
 const LLMS_SAMPLE = JSON.stringify({
@@ -89,6 +90,84 @@ const DOCTOR_SAMPLE = {
     },
   ],
 };
+
+describe("i18n", () => {
+  test("en and ko expose the same non-empty keys", () => {
+    assert.deepStrictEqual(
+      Object.keys(MESSAGES.ko).sort(),
+      Object.keys(MESSAGES.en).sort(),
+    );
+    assert.deepStrictEqual(SUPPORTED, ["en", "ko"]);
+    for (const lang of SUPPORTED)
+      for (const [key, value] of Object.entries(MESSAGES[lang])) {
+        assert.strictEqual(typeof value, "string", `${lang}.${key}`);
+        assert.ok(value.trim().length > 0, `${lang}.${key} is empty`);
+      }
+  });
+
+  test("detectLang prefers stored, then Korean navigator languages", () => {
+    assert.strictEqual(detectLang("ko", []), "ko");
+    assert.strictEqual(detectLang("en", ["ko-KR"]), "en");
+    assert.strictEqual(detectLang("xx", ["ko-KR"]), "ko");
+    assert.strictEqual(detectLang("xx", ["en-US"]), "en");
+    assert.strictEqual(detectLang(undefined, ["en-US"]), "en");
+    assert.strictEqual(detectLang(null, ["en-US", "ko-KR"]), "ko");
+    assert.strictEqual(detectLang(null, []), "en");
+  });
+
+  test("translate falls back and replaces placeholders", () => {
+    assert.strictEqual(translate("ko", "actions.run"), "실행");
+    assert.strictEqual(translate("en", "actions.run"), "Run");
+    assert.strictEqual(translate("fr", "actions.run"), "Run");
+    assert.strictEqual(translate("ko", "missing.key"), "missing.key");
+    assert.strictEqual(
+      translate("en", "form.optional", { n: 3 }),
+      "Optional settings (3)",
+    );
+    assert.strictEqual(
+      translate("ko", "form.optional", { n: 3 }),
+      "선택 설정 (3개)",
+    );
+    assert.strictEqual(
+      translate("ko", "env.chipTitle", { name: "doctor" }),
+      "doctor 열기",
+    );
+  });
+
+  test("every t() key literal in app.js exists in MESSAGES.en", async () => {
+    const source = await readFile(
+      new URL("../public/app.js", import.meta.url),
+      "utf8",
+    );
+    const keys = new Set();
+    const pattern = /\bt\(\s*(["'])([^"'`]+)\1\s*[,)]/g;
+    let match;
+    while ((match = pattern.exec(source))) keys.add(match[2]);
+    assert.ok(keys.size > 20, `found only ${keys.size} keys`);
+    for (const key of keys)
+      assert.ok(
+        Object.prototype.hasOwnProperty.call(MESSAGES.en, key),
+        `missing MESSAGES.en key: ${key}`,
+      );
+  });
+
+  test("every static data-i18n key in index.html exists in MESSAGES.en", async () => {
+    const source = await readFile(
+      new URL("../public/index.html", import.meta.url),
+      "utf8",
+    );
+    const keys = new Set();
+    const pattern = /data-i18n(?:-placeholder|-aria)?="([^"]+)"/g;
+    let match;
+    while ((match = pattern.exec(source))) keys.add(match[1]);
+    assert.ok(keys.size > 0);
+    for (const key of keys)
+      assert.ok(
+        Object.prototype.hasOwnProperty.call(MESSAGES.en, key),
+        `missing MESSAGES.en key: ${key}`,
+      );
+  });
+});
 
 describe("lib.mjs", () => {
   let catalog;
